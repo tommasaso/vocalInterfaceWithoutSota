@@ -4,40 +4,36 @@ import com.google.api.gax.rpc.StreamController
 import com.google.cloud.dialogflow.v2.*
 import com.google.cloud.speech.v1.RecognitionConfig
 import com.google.cloud.speech.v1.SpeechClient
-import com.google.cloud.speech.v1.SpeechRecognitionAlternative
 import com.google.cloud.speech.v1.StreamingRecognitionConfig
-import com.google.cloud.speech.v1.StreamingRecognitionResult
 import com.google.cloud.speech.v1.StreamingRecognizeRequest
 import com.google.cloud.speech.v1.StreamingRecognizeResponse
 import com.google.cloud.texttospeech.v1.*
 import com.google.cloud.texttospeech.v1.AudioEncoding
 import com.google.protobuf.ByteString
-import java.util.ArrayList
-import java.util.concurrent.BlockingQueue
 import java.util.concurrent.LinkedBlockingQueue
 import javax.sound.sampled.*
 import javax.sound.sampled.DataLine.Info
-
-import com.google.api.gax.rpc.ApiStreamObserver
-import com.google.api.gax.core.*
 import com.google.cloud.dialogflow.v2.QueryInput
 import com.google.cloud.dialogflow.v2.QueryResult
 import com.google.cloud.dialogflow.v2.SessionName
 import com.google.cloud.dialogflow.v2.SessionsClient
-import com.google.cloud.dialogflow.v2.TextInput.Builder
 import com.google.cloud.dialogflow.v2.EventInput
 import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.*
 import com.google.cloud.dialogflow.v2beta1.EventInputOrBuilder
 
 // Imports the Google Cloud client library
 import com.google.cloud.texttospeech.v1.SynthesizeSpeechResponse
+import org.apache.commons.lang3.text.WordUtils
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.io.*
+import java.util.*
+import kotlin.concurrent.thread
+
+var eventName = ""
 
 class VocalInterface {
     // Creating shared object
@@ -51,8 +47,9 @@ class VocalInterface {
     @Volatile private var textToSpeechClient: TextToSpeechClient? = null
     private var client: SpeechClient? = null
     private var session: SessionName? = null
-    private var eventName = ""
+    //private var eventName = ""
     private var userId = "/installation_test_name/5fe6b3ba-2767-4669-ae69-6fdc402e695e"
+    private var currentLanguage = "it-IT"//"en-US"
 
 
     /** Performs infinite streaming speech recognition  */
@@ -86,7 +83,7 @@ class VocalInterface {
                 println("checking response and event ")
                 while (true) {
                     if (!textDetected.isEmpty()) {
-                        val textInput = TextInput.newBuilder().setText(textDetected).setLanguageCode("en-US")
+                        val textInput = TextInput.newBuilder().setText(textDetected).setLanguageCode(currentLanguage)
 
                         // Build the query with the TextInput
                         val queryInput = QueryInput.newBuilder().setText(textInput).build()
@@ -98,8 +95,10 @@ class VocalInterface {
                         val queryResult = responseD.queryResult
 
                         try {
-                            Query.print(queryResult)
-                            Query.synthesize(queryResult, textToSpeechClient)
+                            //Query.print(queryResult)
+                            queryPrint(queryResult)
+                            //Query.synthesize(queryResult, textToSpeechClient)
+                            synthesize(queryResult, textToSpeechClient)
                         } catch (e: Exception) {
                             println(e)
                         }
@@ -107,7 +106,7 @@ class VocalInterface {
                         textDetected = ""
 
                     } else if (!eventName.isEmpty()) {
-                        val event = EventInput.newBuilder().setName(eventName+"_event").setLanguageCode("en-US").build()
+                        val event = EventInput.newBuilder().setName(eventName+"_event").setLanguageCode(currentLanguage).build()
 
                         val queryInput = QueryInput.newBuilder().setEvent(event).build()
 
@@ -118,9 +117,11 @@ class VocalInterface {
                         val queryResult = responseD.queryResult
 
                         try {
-                            Query.print(queryResult)
+                            //Query.print(queryResult)
+                            queryPrint(queryResult)
                             speech = true
-                            Query.synthesize(queryResult, textToSpeechClient)
+                            //Query.synthesize(queryResult, textToSpeechClient)
+                            synthesize(queryResult, textToSpeechClient)
                         } catch (e: Exception) {
                             println(e)
                         }
@@ -130,8 +131,6 @@ class VocalInterface {
                 }
             }
         }
-
-
 
         // Creating microphone input buffer thread
         val micrunnable = MicBuffer()
@@ -210,11 +209,13 @@ class VocalInterface {
                         speech = true
 
                         val result = response.resultsList[0]
+
                         // There can be several alternative transcripts for a given chunk of speech. Just
                         // use the first (most likely) one here.
                         val alternative = result.alternativesList[0]
                         println("transcript: " + alternative.transcript + "\nconfindece: " + alternative.confidence)
-
+                        //println("l: " + response.resultsList[0].languageCode.toString())
+                        //currentLanguage = mapperLanguage(response.resultsList[0].languageCode.toString())
                         if (alternative.confidence > 0.5) {
                             textDetected = alternative.transcript
                         }
@@ -236,9 +237,14 @@ class VocalInterface {
 
             clientStream = client!!.streamingRecognizeCallable().splitCall(responseObserver)
 
+            //val languageList = ArrayList<String>()
+            //languageList.add("it-IT")
+            //languageList.add("en-US")
+
             val recognitionConfig = RecognitionConfig.newBuilder()
                 .setEncoding(RecognitionConfig.AudioEncoding.LINEAR16)
-                .setLanguageCode("en-US")
+                .setLanguageCode(currentLanguage)
+                //.addAllAlternativeLanguageCodes(languageList)
                 .setSampleRateHertz(16000)
                 .build()
             val streamingRecognitionConfig =
@@ -300,6 +306,61 @@ class VocalInterface {
             println(e)
         }
     }
+
+    fun queryPrint(queryResult: QueryResult) {
+        println("====================")
+        System.out.format("Query Text: '%s'\n", queryResult.queryText)
+        System.out.format( "Detected Intent: %s (confidence: %f)\n",
+            queryResult.intent.displayName, queryResult.intentDetectionConfidence )
+        System.out.format("Fulfillment Text: '%s'\n", queryResult.fulfillmentText)
+    }
+
+    fun synthesize(queryResult: QueryResult, textToSpeechClient: TextToSpeechClient?) {
+        try {
+            // Set the text input to be synthesized
+            val input = SynthesisInput.newBuilder()
+                .setText(queryResult.fulfillmentText)
+                .build()
+
+            // Build the voice request, select the language code ("en-US") and the ssml voice gender
+            // ("neutral")
+            val voice = VoiceSelectionParams.newBuilder()
+                .setLanguageCode(currentLanguage)
+                .setName(currentLanguage+"-Wavenet-A")
+                .setSsmlGender(SsmlVoiceGender.FEMALE)
+                .build()
+
+            // Select the type of audio file you want returned
+            val audioConfig = AudioConfig.newBuilder()
+                .setAudioEncoding(AudioEncoding.LINEAR16)
+                .build()
+
+            // Perform the text-to-speech request on the text input with the selected voice parameters and
+            // audio file type
+            val responseTTS = textToSpeechClient?.synthesizeSpeech(input, voice, audioConfig)
+
+            // Get the audio contents from the response
+
+            val audioContents = responseTTS?.audioContent
+
+            val rand = Random();
+            val number = rand.nextInt(50).toString()
+            val out = FileOutputStream(number+"-out.wav")//(queryResult.intent.displayName+".wav")
+            out.write(audioContents?.toByteArray())
+            val file = File(System.getProperty("user.dir") + "/"+number+"-out.wav")
+
+            val stream = AudioSystem.getAudioInputStream(file)
+            val format = stream.format
+            val info = DataLine.Info(Clip::class.java, format)
+            val clip = AudioSystem.getLine(info) as Clip
+            clip.open(stream)
+            clip.start()
+            while (clip.microsecondLength != clip.microsecondPosition) { }
+
+        } catch (e: Exception) {
+            println(e)
+        }
+    }
 }
 
 
@@ -310,4 +371,14 @@ fun main(args : Array<String>){
         println("Exception caught: $e")
     }
 
+}
+
+fun mapperLanguage(language: String ):String{
+    return when {
+        language.toLowerCase().contains("it") -> return "it-IT"
+        language.toLowerCase().contains("it") -> return "it-IT"
+        language.toLowerCase().contains("en") -> return "en-US"
+        language.toLowerCase().contains("ja") || language.toLowerCase().contains("jp") -> return "ja-JP"
+        else -> return "en-US"
+    }
 }

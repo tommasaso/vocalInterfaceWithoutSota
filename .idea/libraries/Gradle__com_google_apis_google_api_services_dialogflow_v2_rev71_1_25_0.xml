@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="Gradle: com.google.apis:google-api-services-dialogflow:v2-rev71-1.25.0">
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.google.apis/google-api-services-dialogflow/v2-rev71-1.25.0/979708d6e304af2a39570ba8ff17d97b86a124cb/google-api-services-dialogflow-v2-rev71-1.25.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.google.apis/google-api-services-dialogflow/v2-rev71-1.25.0/4bf1a1f92190e138b4f8c641b6fa074965b7f8ec/google-api-services-dialogflow-v2-rev71-1.25.0-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
